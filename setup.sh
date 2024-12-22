@@ -1,26 +1,28 @@
 #!/bin/bash
 
-# Project directory
-PROJECT_DIR="CoTBros"
+# Create project directories
+mkdir -p data/raw
+mkdir -p data/processed
+mkdir -p models/cot_generator
+mkdir -p models/response_generator
+mkdir -p logs
+mkdir -p src
+mkdir -p scripts
 
-# Create directories
-mkdir -p "$PROJECT_DIR"/data/raw
-mkdir -p "$PROJECT_DIR"/data/processed
-mkdir -p "$PROJECT_DIR"/models/cot_generator
-mkdir -p "$PROJECT_DIR"/models/response_generator
-mkdir -p "$PROJECT_DIR"/logs
-mkdir -p "$PROJECT_DIR"/src
-mkdir -p "$PROJECT_DIR"/scripts
+# Create necessary files
+touch src/data_processing.py
+touch src/cot_generator_trainer.py
+touch src/response_generator_trainer.py
+touch src/inference.py
+touch src/utils.py
+touch scripts/setup.sh
+touch scripts/train_cot_generator.sh
+touch scripts/train_response_generator.sh
+touch scripts/download_data.sh
+touch requirements.txt
+touch README.md
 
-# Create files
-touch "$PROJECT_DIR"/src/data_processing.py
-touch "$PROJECT_DIR"/src/cot_training.py
-touch "$PROJECT_DIR"/src/response_training.py
-touch "$PROJECT_DIR"/src/inference.py
-touch "$PROJECT_DIR"/src/utils.py
-touch "$PROJECT_DIR"/scripts/download_data.sh
-touch "$PROJECT_DIR"/scripts/train_cot.sh
-touch "$PROJECT_DIR"/scripts/train_response.sh
-touch "$PROJECT_DIR"/requirements.txt
-touch "$PROJECT_DIR"/README.md
+# Make scripts executable
+chmod +x scripts/*.sh
+
 echo "Project structure created."

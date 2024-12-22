@@ -1,0 +1,8 @@
+torch
+transformers
+datasets
+rich
+tensorboard
+tqdm
+accelerate
+scikit-learn
