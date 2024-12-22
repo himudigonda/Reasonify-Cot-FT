@@ -1,8 +1,7 @@
 torch
 transformers
 datasets
-rich
-tensorboard
 tqdm
-accelerate
+pandas
+numpy
 scikit-learn
