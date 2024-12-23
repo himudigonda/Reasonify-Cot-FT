@@ -1,25 +1,21 @@
 #!/bin/bash
 
 # Create the project directory structure
-mkdir -p data/raw
-mkdir -p data/processed
+mkdir -p config
 mkdir -p data/splits
 mkdir -p models/model1/saved_weights
 mkdir -p models/model2/saved_weights
 mkdir -p scripts
 mkdir -p logs
-mkdir -p config
-mkdir -p notebooks
 
 # Create empty placeholder config files
-touch models/model1/config.json
-touch models/model2/config.json
 touch config/params.json
+touch config/model1_config.json
+touch config/model2_config.json
 
 # Create basic python files
 touch scripts/data_processing.py
-touch scripts/train_model1.py
-touch scripts/train_model2.py
+touch scripts/combined_training.py
 touch scripts/evaluate.py
 touch scripts/inference.py
 touch scripts/utils.py
@@ -33,6 +29,9 @@ tqdm
 pandas
 numpy
 scikit-learn
+modin
+accelerate
+rich
 EOF
 
 # Create a basic README.md file

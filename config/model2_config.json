@@ -4,5 +4,6 @@
     "batch_size": 4,
     "num_epochs": 3,
     "max_length": 128,
-    "warmup_ratio": 0.1
+    "warmup_ratio": 0.1,
+    "output_dir": "models/model2/saved_weights/"
 }

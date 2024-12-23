@@ -1,69 +1,114 @@
 import json
 import os
+import pandas as pd
 from datasets import load_dataset
 from transformers import AutoTokenizer
-from sklearn.model_selection import train_test_split
+from utils import load_config, add_padding_token
 
-# Load configuration
-with open("config/params.json", "r") as f:
-    params = json.load(f)
-with open("models/model1/config.json", "r") as f:
-    model1_config = json.load(f)
-with open("models/model2/config.json", "r") as f:
-    model2_config = json.load(f)
+def main():
+
+    # Load configurations
+    params = load_config("config/params.json")
+    if not params:
+        return
+    model1_config = load_config("config/model1_config.json")
+    if not model1_config:
+        return
+    model2_config = load_config("config/model2_config.json")
+    if not model2_config:
+        return
+
+    # Load the tokenizer (load once)
+    tokenizer = AutoTokenizer.from_pretrained(model1_config["model_name"])
+    add_padding_token(tokenizer)
+
+    def tokenize_function(examples):
+        """Tokenizes a batch of texts using the tokenizer."""
+        source_tokens = tokenizer(examples["source"], padding="max_length", truncation=True, max_length=model1_config["max_length"])
+        target_tokens = tokenizer(examples["target"], padding="max_length", truncation=True, max_length=model1_config["max_length"])
+        rationale_tokens = tokenizer(examples["rationale"], padding="max_length", truncation=True, max_length=model1_config["max_length"])
+        return {
+            "input_ids": source_tokens["input_ids"],
+            "labels": target_tokens["input_ids"],
+            "rationale_ids": rationale_tokens["input_ids"]
+            }
+
+    def tokenize_and_split(df, sample_size_percent):
+      """Tokenizes data and creates train/val/test splits."""
+      print(f"-[info] data_processing.tokenize_and_split : Starting tokenization and splitting")
+
+      # Sample the DataFrame
+      if sample_size_percent < 1.0:
+          df = df.sample(frac=sample_size_percent, random_state=42)
+          print(f"-[info] data_processing.tokenize_and_split : Reduced dataset to {sample_size_percent*100:.2f} %")
+
+      # Calculate split sizes
+      total_rows = len(df)
+      test_size = int(total_rows * params["test_size"])
+      val_size = int(total_rows * params["val_size"])
+      train_size = total_rows - test_size - val_size
+
+       # Split using iloc
+      test_df = df.iloc[:test_size]
+      val_df = df.iloc[test_size:test_size + val_size]
+      train_df = df.iloc[test_size + val_size:]
+      print(f"-[debug] data_processing.tokenize_and_split : Created train, test and validation splits")
+
+      print
+
+      # Tokenize each dataset split
+      train_tokenized = train_df.apply(lambda x: tokenize_function(x), axis=1, result_type='expand')
+      print(f"-[debug] data_processing.tokenize_and_split : Tokenized train split")
+      val_tokenized = val_df.apply(lambda x: tokenize_function(x), axis=1, result_type='expand')
+      print(f"-[debug] data_processing.tokenize_and_split : Tokenized val split")
+      test_tokenized = test_df.apply(lambda x: tokenize_function(x), axis=1, result_type='expand')
+      print(f"-[debug] data_processing.tokenize_and_split : Tokenized test split")
 
 
-def tokenize_and_split(data, tokenizer, max_length):
-    """Tokenizes data and creates train/val/test splits."""
-    source_texts = [example["source"] for example in data]
-    target_texts = [example["target"] for example in data]
-    rationale_texts = [example["rationale"] for example in data]
+      train = train_tokenized.rename(columns={"input_ids": "input_ids", "labels": "labels", "rationale_ids": "rationale_ids"})
+      val = val_tokenized.rename(columns={"input_ids": "input_ids", "labels": "labels", "rationale_ids": "rationale_ids"})
+      test = test_tokenized.rename(columns={"input_ids": "input_ids", "labels": "labels", "rationale_ids": "rationale_ids"})
+      print(f"-[debug] data_processing.tokenize_and_split : Renamed columns")
 
-    tokenized_sources = tokenizer(source_texts, padding='max_length', truncation=True, max_length=max_length, return_tensors="pt")
-    tokenized_targets = tokenizer(target_texts, padding='max_length', truncation=True, max_length=max_length, return_tensors="pt")
-    tokenized_rationales = tokenizer(rationale_texts, padding='max_length', truncation=True, max_length=max_length, return_tensors="pt")
+      print(f"-[info] data_processing.tokenize_and_split : Tokenization and splitting completed successfully")
+      return train, val, test
 
-
-    train_data, test_data, train_target, test_target, train_rationale, test_rationale = train_test_split(
-        tokenized_sources["input_ids"], tokenized_targets["input_ids"], tokenized_rationales["input_ids"], test_size=params["test_size"], random_state=42
-    )
-
-    train_data, val_data, train_target, val_target, train_rationale, val_rationale = train_test_split(
-        train_data, train_target, train_rationale, test_size=params["val_size"], random_state=42
-    )
-
-    train = {"input_ids":train_data, "target_ids":train_target, "rationale_ids": train_rationale}
-    val = {"input_ids":val_data, "target_ids":val_target, "rationale_ids": val_rationale}
-    test = {"input_ids":test_data, "target_ids":test_target, "rationale_ids": test_rationale}
-
-    return train, val, test
-
-def save_splits(train_data, val_data, test_data, output_dir):
+    def save_splits(train_data, val_data, test_data, output_dir):
         """Saves the train/val/test splits in the specified output directory"""
+        print(f"-[info] data_processing.save_splits : Starting saving of splits")
         os.makedirs(output_dir, exist_ok=True)
+        print(f"-[debug] data_processing.save_splits : Created output directories")
 
         for split_name, data in zip(["train", "val", "test"], [train_data, val_data, test_data]):
-            filename = os.path.join(output_dir, f"{split_name}.json")
-            with open(filename, 'w') as file:
-                json.dump({
-                    "input_ids": data["input_ids"].tolist(),
-                    "target_ids": data["target_ids"].tolist(),
-                     "rationale_ids": data["rationale_ids"].tolist(),
-                }, file)
+            filename = os.path.join(output_dir, f"{split_name}.parquet")
+            df = pd.DataFrame(data)
+            print(f"-[debug] data_processing.save_splits : Saving {split_name} split to {filename}")
+            df.to_parquet(filename)
+            print(f"-[debug] data_processing.save_splits : Saved {split_name} split")
 
-if __name__ == '__main__':
+        print(f"-[info] data_processing.save_splits : Saving of splits completed")
+
+    print(f"-[info] data_processing.main : Starting Data Processing")
+
     # Load the dataset
-    dataset = load_dataset("kaist-ai/CoT-Collection")
+    print(f"-[info] data_processing.main : Loading dataset")
+    dataset = load_dataset("kaist-ai/CoT-Collection", trust_remote_code=True)
     dataset = dataset["train"]
+    print(f"-[info] data_processing.main : Dataset loaded successfully")
 
-    # Load the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model1_config["model_name"])
+    # Convert the dataset to a Pandas DataFrame
+    print(f"-[debug] data_processing.main : Converting dataset to Pandas DataFrame")
+    df = pd.DataFrame(dataset.to_pandas())
+    print(f"-[debug] data_processing.main : Successfully converted dataset to Pandas DataFrame")
 
     # Tokenize and Split the data
-    train, val, test = tokenize_and_split(dataset, tokenizer, model1_config["max_length"])
-
+    sample_size = params.get("sample_size", 1.0)
+    train, val, test = tokenize_and_split(df, sample_size)
 
     # Save the splits
     save_splits(train, val, test, "data/splits/")
+    print(f"-[info] data_processing.main : Data tokenized and split successfully.")
+    print(f"-[info] data_processing.main : Completed Data Processing")
 
-    print("Data tokenized and split successfully.")
+if __name__ == '__main__':
+  main()
