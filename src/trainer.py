@@ -4,9 +4,9 @@ from src.model_loading import load_model_and_tokenizer
 from src.evaluation import evaluate
 import torch
 from torch.optim import AdamW
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import os
-from src.utils import get_gpu_info
+from accelerate import Accelerator
 print("-[DEBUG] trainer.py : trainer module imported")
 
 
@@ -25,7 +25,10 @@ def train(model, tokenizer, train_dataloader, optimizer, num_epochs, output_dir,
         small_eval_size: The size of the evaluation subset.
   """
   print("-[INFO] trainer.py/train : Starting training")
-  model.train() # sets model to training mode
+
+  accelerator = Accelerator() # init accelerator object
+
+  model, optimizer, train_dataloader = accelerator.prepare(model, optimizer, train_dataloader) # prepare the model, optimizer and dataloader
 
   if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -33,27 +36,21 @@ def train(model, tokenizer, train_dataloader, optimizer, num_epochs, output_dir,
   else:
       print(f"-[INFO] trainer.py/train : Output directory already exists: {output_dir}")
 
-  gpu_devices = get_gpu_info()
-  device = "cuda" if gpu_devices else "cpu"
-  print(f"-[INFO] trainer.py/train : Device: {device}")
-
   train_steps = 0
 
   for epoch in range(num_epochs):
     print(f"-[INFO] trainer.py/train : Starting Epoch: {epoch + 1}")
-    for batch in tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}"):
+    for batch in tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", disable=not accelerator.is_main_process):
       # forward pass
-      input_ids = batch["input_ids"].to(device)
-      attention_mask = batch["attention_mask"].to(device)
+      outputs = model(**batch, labels=batch["input_ids"]) # use the batch dictionary
 
-      outputs = model(input_ids, attention_mask=attention_mask, labels=input_ids)
       loss = outputs.loss
       print(f"-[DEBUG] trainer.py/train : Batch loss: {loss.item()}")
 
       # backward pass
-      optimizer.zero_grad()
-      loss.backward()
+      accelerator.backward(loss)
       optimizer.step()
+      optimizer.zero_grad()
 
       train_steps += 1
       # Evaluate every eval_every steps
@@ -68,23 +65,27 @@ def train(model, tokenizer, train_dataloader, optimizer, num_epochs, output_dir,
         small_eval_dataset = eval_dataset.select(range(small_eval_size))
         # prepare dataloader
         eval_dataloader = prepare_dataloader(small_eval_dataset, tokenizer, batch_size=8, shuffle=False)
+        eval_dataloader = accelerator.prepare(eval_dataloader) # prepare eval dataloader
+
         # evaluate and get the accuracy
-        accuracy = evaluate(model, tokenizer, eval_dataloader, output_dir, device)
+        accuracy = evaluate(model, tokenizer, eval_dataloader, output_dir, accelerator)
         # save the metric value in a txt file
-        with open(os.path.join(output_dir, f"accuracy_step_{train_steps}.txt"), "w") as f:
-          f.write(f"{accuracy['accuracy']}")
+        if accelerator.is_main_process:
+          with open(os.path.join(output_dir, f"accuracy_step_{train_steps}.txt"), "w") as f:
+            f.write(f"{accuracy['accuracy']}")
         print(f"-[INFO] trainer.py/train : Evaluation at step {train_steps} complete. Accuracy: {accuracy['accuracy']}")
 
     print(f"-[INFO] trainer.py/train : Epoch {epoch+1} complete.")
 
   # Save the model at end of the training.
-  try:
-      print(f"-[INFO] trainer.py/train : Saving the model to: {output_dir}")
-      model.save_pretrained(output_dir)
-      tokenizer.save_pretrained(output_dir)
-      print(f"-[INFO] trainer.py/train : Model saved successfully.")
-  except Exception as e:
-      print(f"-[ERROR] trainer.py/train : Error saving the model: {e}")
+  if accelerator.is_main_process:
+    try:
+        print(f"-[INFO] trainer.py/train : Saving the model to: {output_dir}")
+        accelerator.save_model(model, output_dir)
+        tokenizer.save_pretrained(output_dir)
+        print(f"-[INFO] trainer.py/train : Model saved successfully.")
+    except Exception as e:
+        print(f"-[ERROR] trainer.py/train : Error saving the model: {e}")
 
   print("-[INFO] trainer.py/train : Training complete.")
 

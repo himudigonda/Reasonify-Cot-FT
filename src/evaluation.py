@@ -2,14 +2,15 @@
 from src.data_loading import load_cot_dataset, prepare_dataloader
 from src.model_loading import load_model_and_tokenizer
 from src.utils import extract_answer
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import torch
 from torch.optim import AdamW
 from evaluate import load
 import os
+from accelerate import Accelerator
 print("-[DEBUG] evaluation.py : evaluation module imported")
 
-def evaluate(model, tokenizer, eval_dataloader, output_dir, device):
+def evaluate(model, tokenizer, eval_dataloader, output_dir, accelerator):
   """
   Evaluates the model on the given dataset and calculates the accuracy.
 
@@ -18,6 +19,7 @@ def evaluate(model, tokenizer, eval_dataloader, output_dir, device):
     tokenizer: The tokenizer to use.
     eval_dataloader: The dataloader for evaluation data.
     output_dir: directory to save the model
+    accelerator: The accelerator object.
   """
   print("-[INFO] evaluation.py/evaluate : Starting evaluation")
 
@@ -35,19 +37,15 @@ def evaluate(model, tokenizer, eval_dataloader, output_dir, device):
   all_predictions = []
   all_references = []
 
-  for batch in tqdm(eval_dataloader, desc=f"Evaluating"):
+  for batch in tqdm(eval_dataloader, desc=f"Evaluating", disable=not accelerator.is_main_process):
     with torch.no_grad():
-        input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
-
-        # generating output from the model
-        outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_new_tokens=256)
+        outputs = model.generate(**batch, max_new_tokens=256) # use the batch dictionary
 
         # extract the answer and decode the input id
         predictions = [extract_answer(output, tokenizer) for output in outputs]
 
         # decode all input ids
-        references = [tokenizer.decode(input_ids[i], skip_special_tokens=True) for i in range(len(input_ids))]
+        references = [tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True) for i in range(len(batch["input_ids"]))]
 
         # accumulate the results
         all_predictions.extend(predictions)
@@ -55,11 +53,18 @@ def evaluate(model, tokenizer, eval_dataloader, output_dir, device):
 
         total_predictions += len(predictions)
 
-  # calculate accuracy
-  accuracy_metric.add_batch(predictions=all_predictions, references=all_references)
-  accuracy = accuracy_metric.compute()
-  print(f"-[INFO] evaluation.py/evaluate : Evaluation complete. Accuracy: {accuracy['accuracy'] * 100:.2f}%")
-  return accuracy
+  # gather results across all GPUs
+  all_predictions = accelerator.gather(all_predictions)
+  all_references = accelerator.gather(all_references)
+
+  # calculate accuracy on rank 0
+  if accelerator.is_main_process:
+      accuracy_metric.add_batch(predictions=all_predictions, references=all_references)
+      accuracy = accuracy_metric.compute()
+      print(f"-[INFO] evaluation.py/evaluate : Evaluation complete. Accuracy: {accuracy['accuracy'] * 100:.2f}%")
+      return accuracy
+  else:
+        return {"accuracy": 0.0}
 
 
 if __name__ == "__main__":
@@ -80,12 +85,13 @@ if __name__ == "__main__":
         exit()
 
     eval_dataloader = prepare_dataloader(dataset, tokenizer, batch_size=16, shuffle=False, max_length=512)
-    gpu_devices = get_gpu_info()
-    device = "cuda" if gpu_devices else "cpu"
+    accelerator = Accelerator()
+    eval_dataloader = accelerator.prepare(eval_dataloader)
     output_dir = "./evaluated_model"
     if os.path.exists("./trained_model"):
-      model.load_pretrained("./trained_model")
+      accelerator.load_model(model, "./trained_model")
       print("-[INFO] evaluation.py : Loaded saved model")
 
-    accuracy = evaluate(model, tokenizer, eval_dataloader, output_dir, device)
-    print(f"-[INFO] evaluation.py : The accuracy of model is {accuracy}")
+    accuracy = evaluate(model, tokenizer, eval_dataloader, output_dir, accelerator)
+    if accelerator.is_main_process:
+        print(f"-[INFO] evaluation.py : The accuracy of model is {accuracy}")
