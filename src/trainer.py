@@ -45,7 +45,7 @@ def train(model, tokenizer, train_dataloader, optimizer, num_epochs, output_dir,
       outputs = model(**batch, labels=batch["input_ids"]) # use the batch dictionary
 
       loss = outputs.loss
-      print(f"-[DEBUG] trainer.py/train : Batch loss: {loss.item()}")
+      # print(f"-[DEBUG] trainer.py/train : Batch loss: {loss.item()}")
 
       # backward pass
       accelerator.backward(loss)
@@ -54,17 +54,17 @@ def train(model, tokenizer, train_dataloader, optimizer, num_epochs, output_dir,
 
       train_steps += 1
       # Evaluate every eval_every steps
-      if train_steps % eval_every == 0:
+    if train_steps % eval_every == 0:
         print(f"-[INFO] trainer.py/train : Running Evaluation at training step {train_steps}")
-        # load the eval dataset
-        eval_dataset = load_cot_dataset(split="validation")
+        # Load validation split from train data
+        eval_dataset = load_cot_dataset(split="validation")  # Use same fraction as training
         if not eval_dataset:
-             print("-[ERROR] trainer.py/train : Error loading evaluation dataset")
-             continue
+            print("-[ERROR] trainer.py/train : Error loading evaluation dataset")
+            continue
         # get a small subset for evaluation
         small_eval_dataset = eval_dataset.select(range(small_eval_size))
         # prepare dataloader
-        eval_dataloader = prepare_dataloader(small_eval_dataset, tokenizer, batch_size=8, shuffle=False)
+        eval_dataloader = prepare_dataloader(small_eval_dataset, tokenizer, batch_size=1, shuffle=False)
         eval_dataloader = accelerator.prepare(eval_dataloader) # prepare eval dataloader
 
         # evaluate and get the accuracy
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print("-[ERROR] trainer.py : Model and/or tokenizer failed to load.")
         exit()
 
-    train_dataloader = prepare_dataloader(dataset, tokenizer, batch_size=16, shuffle=True, max_length=512)
+    train_dataloader = prepare_dataloader(dataset, tokenizer, batch_size=1, shuffle=True, max_length=512)
     optimizer = AdamW(model.parameters(), lr=5e-5)
     num_epochs = 1
     output_dir = "./trained_model"

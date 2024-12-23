@@ -25,24 +25,24 @@ def format_cot_input(example, tokenizer, max_length=512):
 
 def extract_answer(model_output, tokenizer, result_token="[RESULT]"):
     """Extracts the generated answer from the model's output."""
-    print(f"-[DEBUG] utils.py/extract_answer : Starting answer extraction")
+    # print(f"-[DEBUG] utils.py/extract_answer : Starting answer extraction")
 
     result_ids = tokenizer.encode(result_token, add_special_tokens=False)
-    print(f"-[DEBUG] utils.py/extract_answer : result_ids are: {result_ids}")
+    # print(f"-[DEBUG] utils.py/extract_answer : result_ids are: {result_ids}")
 
 
     decoded_output = tokenizer.decode(model_output, skip_special_tokens=True)
-    print(f"-[DEBUG] utils.py/extract_answer : decoded_output: {decoded_output}")
+    # print(f"-[DEBUG] utils.py/extract_answer : decoded_output: {decoded_output}")
 
     try:
 
         result_index = decoded_output.find(result_token)
         if result_index != -1:
             extracted_text = decoded_output[result_index + len(result_token) :].strip()
-            print(f"-[DEBUG] utils.py/extract_answer : Extracted answer: {extracted_text}")
+            # print(f"-[DEBUG] utils.py/extract_answer : Extracted answer: {extracted_text}")
             return extracted_text
         else:
-          print(f"-[DEBUG] utils.py/extract_answer : Result token not found, returning the full output")
+          # print(f"-[DEBUG] utils.py/extract_answer : Result token not found, returning the full output")
           return decoded_output
     except Exception as e:
         print(f"-[ERROR] utils.py/extract_answer : Error during answer extraction: {e}")

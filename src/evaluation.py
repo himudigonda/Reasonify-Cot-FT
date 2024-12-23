@@ -29,8 +29,8 @@ def evaluate(model, tokenizer, eval_dataloader, output_dir, accelerator):
   if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"-[INFO] evaluation.py/evaluate : Created output directory: {output_dir}")
-  else:
-      print(f"-[INFO] evaluation.py/evaluate : Output directory already exists: {output_dir}")
+#   else:
+    #   print(f"-[INFO] evaluation.py/evaluate : Output directory already exists: {output_dir}")
 
   accuracy_metric = load("accuracy")
   total_predictions = 0
@@ -84,13 +84,24 @@ if __name__ == "__main__":
         print("-[ERROR] evaluation.py : Model and/or tokenizer failed to load.")
         exit()
 
-    eval_dataloader = prepare_dataloader(dataset, tokenizer, batch_size=16, shuffle=False, max_length=512)
+    eval_dataloader = prepare_dataloader(dataset, tokenizer, batch_size=1, shuffle=False, max_length=512)
     accelerator = Accelerator()
-    eval_dataloader = accelerator.prepare(eval_dataloader)
+
+    # Prepare model and dataloader without optimizer
+    model, eval_dataloader = accelerator.prepare(model, eval_dataloader)
     output_dir = "./evaluated_model"
+
     if os.path.exists("./trained_model"):
-      accelerator.load_model(model, "./trained_model")
-      print("-[INFO] evaluation.py : Loaded saved model")
+        print("-[INFO] evaluation.py : Loading Saved Model state")
+        try:
+            # Load only model weights instead of full state
+            model.load_state_dict(torch.load("./trained_model/pytorch_model.bin"))
+            print("-[INFO] evaluation.py : Loaded saved model weights")
+        except Exception as e:
+            print(f"-[ERROR] evaluation.py : Error loading model weights: {e}")
+            print("-[INFO] evaluation.py : Proceeding with initial model weights")
+    else:
+        print("-[WARNING] evaluation.py : No saved model found, using initial weights")
 
     accuracy = evaluate(model, tokenizer, eval_dataloader, output_dir, accelerator)
     if accelerator.is_main_process:

@@ -4,13 +4,31 @@ import torch
 print("-[DEBUG] data_loading.py : data_loading module imported")
 
 
-def load_cot_dataset(dataset_name="kaist-ai/CoT-Collection", split="train"):
-    """Loads the CoT dataset from Hugging Face."""
-    print(f"-[INFO] data_loading.py/load_cot_dataset : Loading dataset: {dataset_name}, split: {split}")
+def load_cot_dataset(dataset_name="kaist-ai/CoT-Collection", split="train", fraction=0.001, validation_split=0.1):
+    """Loads the CoT dataset from Hugging Face.
+
+    Args:
+      dataset_name: The name of the dataset
+      split: The split to load from
+      fraction: The fraction of the dataset to load
+      validation_split: Fraction of data to use for validation if needed
+    """
+    print(f"-[INFO] data_loading.py/load_cot_dataset : Loading dataset: {dataset_name}, split: {split}, fraction: {fraction}")
     try:
         dataset = load_dataset(dataset_name, split=split)
+        if fraction < 1.0:
+            dataset = dataset.select(range(int(len(dataset) * fraction)))
+
+        if split == "validation":
+            # Take last validation_split % for validation
+            start_idx = int(len(dataset) * (1 - validation_split))
+            dataset = dataset.select(range(start_idx, len(dataset)))
+        elif split == "train":
+            # Take first (1-validation_split)% for training
+            end_idx = int(len(dataset) * (1 - validation_split))
+            dataset = dataset.select(range(end_idx))
+
         print(f"-[INFO] data_loading.py/load_cot_dataset : Dataset loaded successfully. Length: {len(dataset)}")
-        print(f"-[DEBUG] data_loading.py/load_cot_dataset : Features: {dataset.features}")
         return dataset
     except Exception as e:
         print(f"-[ERROR] data_loading.py/load_cot_dataset : Error loading dataset: {e}")
@@ -64,8 +82,8 @@ if __name__ == "__main__":
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
-    dataloader = prepare_dataloader(dataset, tokenizer, batch_size=16, shuffle=True, max_length=512)
-    print("-[INFO] data_loading.py : Example data loader created with batch_size 8")
+    dataloader = prepare_dataloader(dataset, tokenizer, batch_size=1, shuffle=True, max_length=512)
+    print("-[INFO] data_loading.py : Example data loader created with batch_size 16")
     for batch in dataloader:
         print("-[DEBUG] data_loading.py : Example data loader batch")
         print("-[DEBUG] data_loading.py : input_ids shape: ", batch["input_ids"].shape)
