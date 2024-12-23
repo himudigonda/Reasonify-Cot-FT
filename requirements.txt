@@ -1,10 +1,6 @@
-torch
 transformers
 datasets
+torch
 tqdm
-pandas
-numpy
-scikit-learn
-modin
+evaluate
 accelerate
-rich
